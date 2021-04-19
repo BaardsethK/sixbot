@@ -1,0 +1,6 @@
+###### Requirements withtout version specifiers ######
+
+discord.py
+python-dotenv
+
+###### Requirements with version specifiers ######
