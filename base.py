@@ -52,6 +52,7 @@ rankings = {
     23 : "Champion" 
 }
 
+# Has to be set manually on server.
 rank_roles = [
     "Unranked",
     "Copper",
@@ -77,15 +78,34 @@ async def get_player_stats(player_name):
     auth_data = STAT_USERNAME+":"+STAT_PASSWORD
     auth_b64 = base64.b64encode(auth_data.encode("utf-8"))
     headers = {'Authorization': 'Basic {}'.format(str(auth_b64, "utf-8"))}
-    r = requests.get(url, headers=headers)
-    response_json = json.loads(r.text)
-    return response_json
+    try:
+        r = requests.get(url, headers=headers)
+        r.raise_for_status()
+        response_json = json.loads(r.text)
+        return response_json
+    except requests.HTTPError as exceptption:
+        print(exceptption)
 
+async def set_role_by_rank(ctx, member, rank):
+    print("Setting player rank")
+
+    rank = rank.split(' ', 1)[0]
+    try:
+        role = get_role_by_name(ctx, rank)
+        if role == None:
+            raise Exception("Failed to find role by rank name")
+        
+        await member.edit(roles=[], reason="Rank roles autoremoved by SixBot")
+        await member.edit(roles=role, reason="Rank role autoadd by SixBot")
+    except discord.HTTPException as e:
+        print("Changing roles failed", e)
+    except discord.Forbidden as e:
+        print("Permission error when changing roles")
 
 
 @bot.command(name='hi', description='Author info', aliases=['hello'], pass_context=True)
 async def bot_info(ctx):
-    msg = f'''Hello {str(ctx.author.display_name)}, this is a basic bot setup file for discord.py.
+    msg = f'''Hello {str(ctx.author.display_name)}, I get stats for Rainbow 6 players.
     The github repo: https://github.com/BaardsethK/discord.py-base-bot'''
     await ctx.send(msg)
 
@@ -103,27 +123,25 @@ async def player_stats(ctx):
     wins = response["payload"]["stats"]["seasonal"]["ranked"]["wins"]
     losses = response["payload"]["stats"]["seasonal"]["ranked"]["losses"]
 
-    msg = f'''```Player: {player}
-    Rank: {rank} ({mmr}p)
-    K/D: {format(kills / deaths, '.2f')} [{kills}/{deaths}]
-    W/L: {format(100 / (wins + losses) * wins, '.2f')}% [{wins}/{losses}]```
-    '''
+    if deaths == 0:
+        deaths = 1
+
+    if (wins + losses) == 0:
+        msg = f'''```Player: {player}
+        Rank: {rank} ({mmr}p)
+        No matches played```
+        '''
+    else:
+        msg = f'''```Player: {player}
+        Rank: {rank} ({mmr}p)
+        K/D: {format(kills / deaths, '.2f')} [{kills}/{deaths}]
+        W/L: {format(100 / (wins + losses) * wins, '.2f')}% [{wins}/{losses}]```
+        '''
     await ctx.send(msg)
+    await set_role_by_rank(ctx, ctx.author, rank)
 
-    rank = rank.split(' ', 1)[0]
-    try:
-        role = get_role_by_name(ctx, rank)
-        if role == None:
-            raise Exception("Failed to find role by rank name")
-        
-        await ctx.author.edit(roles=[], reason="Rank roles autoremoved by SixBot")
-        await ctx.author.edit(roles=role, reason="Rank role autoadd by SixBot")
-    except discord.HTTPException as e:
-        print("Changing roles failed", e)
-    except discord.Forbidden as e:
-        print("Permission error when changing roles")
 
-@bot.command(name='testallstats', pass_context=True)
+@bot.command(name='allstats', pass_context=True)
 async def test_all_player_stats(ctx):
     members = ctx.channel.members
     msg = 'Current player rankings:```'
@@ -136,8 +154,10 @@ async def test_all_player_stats(ctx):
                 rank = rankings[int(response["payload"]["stats"]["seasonal"]["ranked"]["rank"])]
                 mmr = response["payload"]["stats"]["seasonal"]["ranked"]["mmr"]
                 players[player_name] = [rank,mmr]
+                await set_role_by_rank(ctx, member, rank)
             except:
-                print("Error setting player rank/stats")
+                print("Error setting player rank/stats")                
+
     ordered = dict(sorted(players.items(), key=lambda item: item[1][1], reverse=True))
 
     for player in ordered.items():
